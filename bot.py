@@ -716,28 +716,31 @@ async def parsing_activity_start(callback_query: types.CallbackQuery, state: FSM
         hours = int(online)
         await bot.send_message(callback_query.from_user.id, text='Начинаю парсинг, это может занять от 10 до 15 минут⏱', parse_mode='Markdown')
     if 'joinchat' not in link and '+' not in link:
+            current_time_utc =  datetime.now(timezone.utc)
+            target_time = current_time_utc - timedelta(hours=hours, minutes=0)
+            list_id = []
             ALL_PARTICIPANTS = []
             channel = await client.get_entity(link)
             queryKey = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 
                         'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 
-                        'u', 'v', 'w', 'x', 'y', 'z'] # Латинский алфавит на каждую букву которого делается запрос
-            LIMIT_USER = 200  # Максимальное число записей, передаваемых за один раз, не более 200
+                        'u', 'v', 'w', 'x', 'y', 'z'] 
+            LIMIT_USER = 200  
             for key in queryKey:
                 if queryKey.index(key) == 12:
                     await bot.send_message(callback_query.from_user.id, text='50% завершено')
                 print(f'{queryKey.index(key)+1}/{len(queryKey)}')
-                OFFSET_USER = 0 # номер пользователя, с которого начинается считывание
+                OFFSET_USER = 0 
                 while True:
                     participants = await client(GetParticipantsRequest(channel,ChannelParticipantsSearch(key), OFFSET_USER, LIMIT_USER, hash=0))
                     if not participants.users:
                         break
                     ALL_PARTICIPANTS.extend(participants.users)
                     OFFSET_USER += len(participants.users)
-            ALL_PARTICIPANTS = await sort_by_activity(ALL_PARTICIPANTS, hours)
+            end_list = await sort_by_activity(ALL_PARTICIPANTS, hours)
             target = '*.txt'
             file = glob.glob(target)[0]
             with open(file, "w", encoding="utf-8") as write_file:
-                for participant in tqdm(ALL_PARTICIPANTS):
+                for participant in tqdm(end_list):
                         if participant.username != None and participant.bot == False and participant.fake == False:
                             write_file.writelines(f"@{participant.username}\n")
             target = '*.txt'
@@ -781,11 +784,11 @@ async def parsing_activity_start(callback_query: types.CallbackQuery, state: FSM
                             break
                         ALL_PARTICIPANTS.extend(participants.users)
                         OFFSET_USER += len(participants.users)
-                ALL_PARTICIPANTS = await sort_by_activity(ALL_PARTICIPANTS, hours)
+                end_list = await sort_by_activity(ALL_PARTICIPANTS, hours)
                 target = '*.txt'
                 file = glob.glob(target)[0]
                 with open(file, "w", encoding="utf-8") as write_file:
-                    for participant in tqdm(ALL_PARTICIPANTS):
+                    for participant in tqdm(end_list):
                             if participant.username != None and participant.bot == False and participant.fake == False:
                                 write_file.writelines(f"@{participant.username}\n")
                 target = '*.txt'
@@ -824,11 +827,11 @@ async def parsing_activity_start(callback_query: types.CallbackQuery, state: FSM
                                 break
                             ALL_PARTICIPANTS.extend(participants.users)
                             OFFSET_USER += len(participants.users)
-                    ALL_PARTICIPANTS = await sort_by_activity(ALL_PARTICIPANTS, hours)
+                    end_list = await sort_by_activity(ALL_PARTICIPANTS, hours)
                     target = '*.txt'
                     file = glob.glob(target)[0]
                     with open(file, "w", encoding="utf-8") as write_file:
-                        for participant in tqdm(ALL_PARTICIPANTS):
+                        for participant in tqdm(end_list):
                                 if participant.username != None and participant.bot == False and participant.fake == False:
                                     write_file.writelines(f"@{participant.username}\n")
                     target = '*.txt'
@@ -1044,18 +1047,28 @@ async def sort_by_activity(all_particapants, hours):
     current_time_utc =  datetime.now(timezone.utc)
     target_time = current_time_utc - timedelta(hours=hours, minutes=0)
     list_id = []
+    OFFSET_USER = 0
+    OFFSET_USER1 = 200
+    finish_list = []
     for user in all_particapants:
         list_id.append(user.id)
-    finish_list = await client(GetUsersRequest(list_id))
+    for i in range(len(list_id)):
+        if OFFSET_USER1 > len(list_id):
+            finish_list.extend(await client(GetUsersRequest(list_id[OFFSET_USER:len(list_id)-OFFSET_USER1])))
+            break
+        finish_list.extend(await client(GetUsersRequest(list_id[OFFSET_USER:OFFSET_USER1])))
+        OFFSET_USER += 200
+        OFFSET_USER1 += 200
+    end_list = []
     for participant in finish_list:
-        try:
+        if hasattr(participant.status, 'was_online'):
             if participant.status.was_online > target_time:
-                continue
+                end_list.append(participant)
             if participant.status.was_online < target_time:
-                finish_list.remove(participant)
-        except Exception as error:
-            finish_list.remove(participant)
-    return finish_list
+                continue
+        else:
+            continue
+    return end_list
 
 
 if __name__ == '__main__':
