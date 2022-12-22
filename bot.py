@@ -8,6 +8,7 @@ from telethon.tl.functions.users import GetUsersRequest
 from telethon.tl.types import ChannelParticipantsSearch
 from telethon import TelegramClient, events
 from tqdm import tqdm
+import telethon
 
 import logging
 import random
@@ -62,6 +63,10 @@ class ChatComments(StatesGroup):
     count_posts = State()
 
 class ParsingActivity(StatesGroup):
+    waiting_link = State()
+    last_activity = State()
+
+class ParsingInChat(StatesGroup):
     waiting_link = State()
     last_activity = State()
 
@@ -179,6 +184,21 @@ async def get_private_report(message: types.Message, state: FSMContext):
     text = 'За какой промежуток времени пользователи должны были быть онлайн?'
     await message.answer(text, reply_markup=inline_markup, parse_mode='Markdown')
     await ParsingActivity.last_activity.set()
+
+@dp.callback_query_handler(lambda call: 'parsing_in_chat' in call.data)
+async def parsing_in_chat_start(callback_query: types.CallbackQuery):
+    text = 'Отправьте ссылку на чат'
+    await bot.send_message(callback_query.from_user.id, text, parse_mode='Markdown')
+    await ParsingInChat.waiting_link.set()
+
+@dp.message_handler(state=ParsingInChat.waiting_link)
+async def choice_in_chat_time(message: types.Message, state: FSMContext):
+    await state.update_data(waiting_link=message.text)
+    inline_markup = await date_last_message_menu()
+    text = 'За какой промежуток времени пользователи должны были быть онлайн?'
+    await message.answer(text, reply_markup=inline_markup, parse_mode='Markdown')
+    await ParsingInChat.last_activity.set()
+
 
 '''Админка и все действия с ней'''
 
@@ -344,7 +364,11 @@ async def get_private_report(message: types.Message, state: FSMContext):
         LIMIT_USER = 200  # Максимальное число записей, передаваемых за один раз, не более 200
         ALL_PARTICIPANTS = []  # Список всех участников канала
         await message.answer(text='Начинаю парсинг, это может занять от 10 до 15 минут⏱')
+        upload_message = await bot.send_message(message.chat.id, text='Идёт парсинг: 0%')
         for key in queryKey:
+            progress = (queryKey.index(key)+1)*100/len(queryKey)
+            progress = float('{:.2f}'.format(progress))
+            await upload_message.edit_text(text=f'Идёт парсинг: {progress}%')
             if queryKey.index(key) == 12:
                 await message.answer(text='50% завершено')
             print(f'{queryKey.index(key)+1}/{len(queryKey)}')
@@ -389,7 +413,11 @@ async def get_private_report(message: types.Message, state: FSMContext):
                 'u', 'v', 'w', 'x', 'y', 'z'] # Латинский алфавит на каждую букву которого делается запрос
             LIMIT_USER = 200  # Максимальное число записей, передаваемых за один раз, не более 200
             ALL_PARTICIPANTS = []  # Список всех участников канала
+            upload_message = await bot.send_message(message.chat.id, text='Идёт парсинг: 0%')
             for key in queryKey:
+                progress = (queryKey.index(key)+1)*100/len(queryKey)
+                progress = float('{:.2f}'.format(progress))
+                await upload_message.edit_text(text=f'Идёт парсинг: {progress}%')
                 if queryKey.index(key) == 12:
                     await message.answer(text='50% завершено')
                 print(f'{queryKey.index(key)+1}/{len(queryKey)}')
@@ -463,7 +491,10 @@ async def get_list_report(message: types.Message, state: FSMContext):
     text = 'Начинаю парсинг, это может занять довольно много времени (зависит от количества чатов и числа их участников)'
     await message.answer(text, parse_mode='Markdown')
     ALL_PARTICIPANTS = []
+    upload_message = await bot.send_message(message.chat.id, text=f'Идёт парсинг: Чат 1 из {len(list_of_links)} 0%')
+    count = 0
     for link in list_of_links:
+        count += 1
         if 'joinchat' not in link and '+' not in link:
             try:
                 channel = await client.get_entity(link)
@@ -472,7 +503,9 @@ async def get_list_report(message: types.Message, state: FSMContext):
                         'u', 'v', 'w', 'x', 'y', 'z'] # Латинский алфавит на каждую букву которого делается запрос
                 LIMIT_USER = 200  # Максимальное число записей, передаваемых за один раз, не более 200
                 for key in queryKey:
-                    print(f'{queryKey.index(key)+1}/{len(queryKey)}')
+                    progress = (queryKey.index(key)+1)*100/len(queryKey)
+                    progress = float('{:.2f}'.format(progress))
+                    await upload_message.edit_text(text=f'Идёт парсинг: Чат {count} из {len(list_of_links)} Завершено {progress}%')
                     OFFSET_USER = 0 # номер пользователя, с которого начинается считывание
                     while True:
                         participants = await client(GetParticipantsRequest(channel,ChannelParticipantsSearch(key), OFFSET_USER, LIMIT_USER, hash=0))
@@ -495,7 +528,12 @@ async def get_list_report(message: types.Message, state: FSMContext):
                         'u', 'v', 'w', 'x', 'y', 'z'] # Латинский алфавит на каждую букву которого делается запрос
                 LIMIT_USER = 200  # Максимальное число записей, передаваемых за один раз, не более 200
                 for key in queryKey:
-                    print(f'{queryKey.index(key)+1}/{len(queryKey)}')
+                    progress = (queryKey.index(key)+1)*100/len(queryKey)
+                    progress = float('{:.2f}'.format(progress))
+                    await upload_message.edit_text(text=f'Идёт парсинг: Чат {count} из {len(list_of_links)} Завершено {progress}%')
+                    progress = (queryKey.index(key)+1)*100/len(queryKey)
+                    progress = float('{:.2f}'.format(progress))
+                    await upload_message.edit_text(text=f'Идёт парсинг: Чат {list_of_links.index(link)+1} из {len(list_of_links)} {progress}%')
                     OFFSET_USER = 0 # номер пользователя, с которого начинается считывание
                     while True:
                         participants = await client(GetParticipantsRequest(channel,ChannelParticipantsSearch(key), OFFSET_USER, LIMIT_USER, hash=0))
@@ -512,7 +550,12 @@ async def get_list_report(message: types.Message, state: FSMContext):
                         'u', 'v', 'w', 'x', 'y', 'z'] # Латинский алфавит на каждую букву которого делается запрос
                     LIMIT_USER = 200  # Максимальное число записей, передаваемых за один раз, не более 200
                     for key in queryKey:
-                        print(f'{queryKey.index(key)+1}/{len(queryKey)}')
+                        progress = (queryKey.index(key)+1)*100/len(queryKey)
+                        progress = float('{:.2f}'.format(progress))
+                        await upload_message.edit_text(text=f'Идёт парсинг: Чат {count} из {len(list_of_links)} Завершено {progress}%')
+                        progress = (queryKey.index(key)+1)*100/len(queryKey)
+                        progress = float('{:.2f}'.format(progress))
+                        await upload_message.edit_text(text=f'Идёт парсинг: Чат {list_of_links.index(link)+1} из {len(list_of_links)} {progress}%')
                         OFFSET_USER = 0 # номер пользователя, с которого начинается считывание
                         while True:
                             participants = await client(GetParticipantsRequest(channel,ChannelParticipantsSearch(key), OFFSET_USER, LIMIT_USER, hash=0))
@@ -565,7 +608,6 @@ async def get_comments_users(message: types.Message, state: FSMContext):
     try:
         await state.update_data(count_posts=message.text)
         state_data = await state.get_data()
-        state_data = await state.get_data()
         link = state_data.get('waiting_link')
         count = int(state_data.get('count_posts'))
         if 'joinchat' in link:
@@ -579,8 +621,14 @@ async def get_comments_users(message: types.Message, state: FSMContext):
             channel = await client.get_entity(link)
             ALL_USERS = []  # Список всех участников канала
             await message.answer(text='Начинаю парсинг, это может занять от 10 до 15 минут⏱')
+            upload_message = await bot.send_message(message.chat.id, text='Идёт парсинг: 0%')
             posts = await client(GetHistoryRequest(peer=channel,limit=count,offset_date=None,offset_id=0,max_id=0,min_id=0,add_offset=0,hash=0))
+            count1 = 0
             for post in posts.messages:
+                count1 += 1
+                progress = (count1*100/count)
+                progress = float('{:.2f}'.format(progress))
+                await upload_message.edit_text(text=f'Идёт парсинг: {progress}%')
                 try:
                     async for msg in client.iter_messages(channel.id, reply_to=post.id):
                         ALL_USERS.append(msg.sender)
@@ -617,8 +665,14 @@ async def get_comments_users(message: types.Message, state: FSMContext):
                 channel = await client.get_entity(link)
                 ALL_USERS = []  # Список всех участников канала
                 await message.answer(text='Начинаю парсинг, это может занять от 10 до 15 минут⏱')
-                posts = await client(GetHistoryRequest(peer=channel,limit=count,offset_date=None,offset_id=0,max_id=0,min_id=0,add_offset=0,hash=0))
+                upload_message = await bot.send_message(message.chat.id, text='Идёт парсинг: 0%')
+                posts = await client(GetHistoryRequest(peer=channel,limit=count,offset_date=None,offset_id=0,max_id=0,min_id=0,add_offset=0,hash=0))     
+                count1 = 0
                 for post in posts.messages:
+                    count1 += 1
+                    progress = (count1*100/count)
+                    progress = float('{:.2f}'.format(progress))
+                    await upload_message.edit_text(text=f'Идёт парсинг: {progress}%')
                     try:
                         async for msg in client.iter_messages(channel.id, reply_to=post.id):
                             ALL_USERS.append(msg.sender)
@@ -626,9 +680,7 @@ async def get_comments_users(message: types.Message, state: FSMContext):
                         pass
                 target = '*.txt'
                 file = glob.glob(target)[0]
-                top_text = f'-------------------------------------\n# Сбор через бота: {dp.bot._me.mention}\n\# Группы: {channel.title}o\n# Собрано: {datetime.now()}\n-------------------------------------'
                 with open(file, "w", encoding="utf-8") as write_file:
-                    write_file.writelines(top_text)
                     for user in tqdm(ALL_USERS):
                         try:
                             if user.username != None and user.bot == False and user.fake == False:
@@ -657,8 +709,14 @@ async def get_comments_users(message: types.Message, state: FSMContext):
                     channel = await client.get_entity(link)
                     ALL_USERS = []  # Список всех участников канала
                     await message.answer(text='Начинаю парсинг, это может занять от 10 до 15 минут⏱')
+                    upload_message = await bot.send_message(message.chat.id, text='Идёт парсинг: 0%')
                     posts = await client(GetHistoryRequest(peer=channel,limit=count,offset_date=None,offset_id=0,max_id=0,min_id=0,add_offset=0,hash=0))
+                    count1 = 0
                     for post in posts.messages:
+                        count1 += 1
+                        progress = (count1*100/count)
+                        progress = float('{:.2f}'.format(progress))
+                        await upload_message.edit_text(text=f'Идёт парсинг: {progress}%')
                         try:
                             async for msg in client.iter_messages(channel.id, reply_to=post.id):
                                 ALL_USERS.append(msg.sender)
@@ -696,7 +754,8 @@ async def get_comments_users(message: types.Message, state: FSMContext):
                     await message.answer(text, reply_markup=inline_markup, parse_mode='Markdown')
                     await state.finish()
     except Exception as error:
-        text = 'Ссылка больше не действительна'
+        logging.error(error, exc_info=True)
+        text = 'В канале нет комментариев'
         inline_markup = await main_menu()
         await message.answer(text, reply_markup=inline_markup, parse_mode='Markdown')
         await state.finish()
@@ -715,6 +774,7 @@ async def parsing_activity_start(callback_query: types.CallbackQuery, state: FSM
         online = state_data.get('last_activity').split('_')[1]
         hours = int(online)
         await bot.send_message(callback_query.from_user.id, text='Начинаю парсинг, это может занять от 10 до 15 минут⏱', parse_mode='Markdown')
+        upload_message = await bot.send_message(callback_query.from_user.id, text='Идёт парсинг: 0%')
     if 'joinchat' not in link and '+' not in link:
             current_time_utc =  datetime.now(timezone.utc)
             target_time = current_time_utc - timedelta(hours=hours, minutes=0)
@@ -726,9 +786,9 @@ async def parsing_activity_start(callback_query: types.CallbackQuery, state: FSM
                         'u', 'v', 'w', 'x', 'y', 'z'] 
             LIMIT_USER = 200  
             for key in queryKey:
-                if queryKey.index(key) == 12:
-                    await bot.send_message(callback_query.from_user.id, text='50% завершено')
-                print(f'{queryKey.index(key)+1}/{len(queryKey)}')
+                progress = (queryKey.index(key)+1)*100/len(queryKey)
+                progress = float('{:.2f}'.format(progress))
+                await upload_message.edit_text(text=f'Идёт парсинг: {progress}%')
                 OFFSET_USER = 0 
                 while True:
                     participants = await client(GetParticipantsRequest(channel,ChannelParticipantsSearch(key), OFFSET_USER, LIMIT_USER, hash=0))
@@ -774,9 +834,9 @@ async def parsing_activity_start(callback_query: types.CallbackQuery, state: FSM
                         'u', 'v', 'w', 'x', 'y', 'z'] # Латинский алфавит на каждую букву которого делается запрос
                 LIMIT_USER = 200  # Максимальное число записей, передаваемых за один раз, не более 200
                 for key in queryKey:
-                    if queryKey.index(key) == 12:
-                        await bot.send_message(callback_query.from_user.id, text='50% завершено')
-                    print(f'{queryKey.index(key)+1}/{len(queryKey)}')
+                    progress = (queryKey.index(key)+1)*100/len(queryKey)
+                    progress = float('{:.2f}'.format(progress))
+                    await upload_message.edit_text(text=f'Идёт парсинг: {progress}%')
                     OFFSET_USER = 0 # номер пользователя, с которого начинается считывание
                     while True:
                         participants = await client(GetParticipantsRequest(channel,ChannelParticipantsSearch(key), OFFSET_USER, LIMIT_USER, hash=0))
@@ -817,9 +877,9 @@ async def parsing_activity_start(callback_query: types.CallbackQuery, state: FSM
                         'u', 'v', 'w', 'x', 'y', 'z'] # Латинский алфавит на каждую букву которого делается запрос
                     LIMIT_USER = 200  # Максимальное число записей, передаваемых за один раз, не более 200
                     for key in queryKey:
-                        if queryKey.index(key) == 12:
-                            await bot.send_message(callback_query.from_user.id, text='50% завершено')
-                        print(f'{queryKey.index(key)+1}/{len(queryKey)}')
+                        progress = (queryKey.index(key)+1)*100/len(queryKey)
+                        progress = float('{:.2f}'.format(progress))
+                        await upload_message.edit_text(text=f'Идёт парсинг: {progress}%')
                         OFFSET_USER = 0 # номер пользователя, с которого начинается считывание
                         while True:
                             participants = await client(GetParticipantsRequest(channel,ChannelParticipantsSearch(key), OFFSET_USER, LIMIT_USER, hash=0))
@@ -852,6 +912,174 @@ async def parsing_activity_start(callback_query: types.CallbackQuery, state: FSM
                     await bot.send_document(callback_query.from_user.id, open(file, 'rb'))
                     await bot.send_message(callback_query.from_user.id, text, reply_markup=inline_markup)
     
+@dp.callback_query_handler(state=ParsingInChat.last_activity)
+async def parsing_in_chat_start(callback_query: types.CallbackQuery, state: FSMContext):
+    if orm.check_premium(callback_query.from_user.id) == -1:
+        text = 'Данная функция доступна только премиум пользователям'
+        inline_markup = await premium_parsing_menu()
+        await bot.send_message(callback_query.from_user.id, text, reply_markup=inline_markup, parse_mode='Markdown')
+        await state.finish()
+    else: 
+        await state.update_data(last_activity=callback_query.data)
+        state_data = await state.get_data()
+        link = state_data.get('waiting_link')
+        date = state_data.get('last_activity').split('_')[1]
+        if date == 'all':
+            hours = 0
+        else:
+            hours = int(date)
+        await state.update_data(last_activity=callback_query.data)
+        state_data = await state.get_data()
+        link = state_data.get('waiting_link')
+        online = state_data.get('last_activity').split('_')[1]
+        hours = int(online)
+        await bot.send_message(callback_query.from_user.id, text='Начинаю парсинг, это может занять от 10 до 15 минут⏱', parse_mode='Markdown')
+        upload_message = await bot.send_message(callback_query.from_user.id, text='Идёт парсинг')
+        if 'joinchat' not in link and '+' not in link:
+                channel = await client.get_entity(link)
+                current_time_utc =  datetime.now(timezone.utc)
+                target_time = current_time_utc - timedelta(hours=hours, minutes=0)
+                ALL_PARTICIPANTS = []
+                count = 0
+                points = 1
+                try:
+                    async for msg in client.iter_messages(channel.id):
+                        count += 1
+                        if count == 20:
+                            count = 0
+                            await upload_message.edit_text(text=f'Идёт парсинг'+('.'*points))
+                            points += 1
+                            if points == 5:
+                                points = 0
+                        if target_time <= msg.date:
+                            ALL_PARTICIPANTS.append(msg.sender) 
+                        if target_time > msg.date:
+                            break
+                except Exception as error:
+                    pass
+                target = '*.txt'
+                file = glob.glob(target)[0]
+                with open(file, "w", encoding="utf-8") as write_file:
+                    for participant in tqdm(ALL_PARTICIPANTS):
+                            if type(participant) == telethon.types.Channel:
+                                continue
+                            if participant.username != None and participant.bot == False and participant.fake == False:
+                                write_file.writelines(f"@{participant.username}\n")
+                target = '*.txt'
+                file = glob.glob(target)[0]
+                os.rename(file, f'{channel.title}.txt')
+                file = glob.glob(target)[0]
+                uniqlines = set(open(file,'r', encoding='utf-8').readlines())
+                open(file,'w', encoding='utf-8').writelines(set(uniqlines))
+                with open(file, "r+", encoding="utf-8") as write_file:
+                    lines = write_file.readlines()
+                    top_text = f'-------------------------------------\n# Сбор через бота: {dp.bot._me.mention}\n# Группы: {channel.title}\n# Собрано: {datetime.now()}\n# Количество строк: {len(lines)+5}\n-------------------------------------\n'
+                    lines[0] = top_text
+                    write_file.seek(0)
+                    write_file.writelines(lines)
+                await state.finish()
+                text = 'Для парсинга следующего чата выберите необходимое действие'
+                inline_markup = await premium_menu()
+                await bot.send_document(callback_query.from_user.id, open(file, 'rb'))
+                await bot.send_message(callback_query.from_user.id, text, reply_markup=inline_markup)
+        if 'joinchat' in link or '+' in link:
+                if 'joinchat' in link:
+                    hash = link[link.index('chat')+5:]
+                else:
+                    hash = link[link.index('+')+1:]
+                try:
+                    ALL_PARTICIPANTS = []
+                    await client(ImportChatInviteRequest(hash))
+                    channel = await client.get_entity(link)
+                    current_time_utc =  datetime.now(timezone.utc)
+                    target_time = current_time_utc - timedelta(hours=hours, minutes=0)
+                    ALL_PARTICIPANTS = []
+                    count = 0
+                    points = 1
+                    try:
+                        async for msg in client.iter_messages(channel.id):
+                            count += 1
+                            if count == 20:
+                                count = 0
+                                await upload_message.edit_text(text=f'Идёт парсинг'+('.'*points))
+                                points += 1
+                                if points == 5:
+                                    points = 0
+                            ALL_PARTICIPANTS.append(msg.sender)
+                    except Exception as error:
+                        pass
+                    target = '*.txt'
+                    file = glob.glob(target)[0]
+                    with open(file, "w", encoding="utf-8") as write_file:
+                        for participant in tqdm(ALL_PARTICIPANTS):
+                                if type(participant) == telethon.types.Channel:
+                                    continue
+                                if participant.username != None and participant.bot == False and participant.fake == False:
+                                    write_file.writelines(f"@{participant.username}\n")
+                    target = '*.txt'
+                    file = glob.glob(target)[0]
+                    os.rename(file, f'{channel.title}.txt')
+                    file = glob.glob(target)[0]
+                    uniqlines = set(open(file,'r', encoding='utf-8').readlines())
+                    open(file,'w', encoding='utf-8').writelines(set(uniqlines))
+                    with open(file, "r+", encoding="utf-8") as write_file:
+                        lines = write_file.readlines()
+                        top_text = f'-------------------------------------\n# Сбор через бота: {dp.bot._me.mention}\n# Группы: {channel.title}\n# Собрано: {datetime.now()}\n# Количество строк: {len(lines)+5}\n-------------------------------------\n'
+                        lines[0] = top_text
+                        write_file.seek(0)
+                        write_file.writelines(lines)
+                    await state.finish()
+                    text = 'Для парсинга следующего чата выберите необходимое действие'
+                    inline_markup = await premium_menu()
+                    await bot.send_document(callback_query.from_user.id, open(file, 'rb'))
+                    await bot.send_message(callback_query.from_user.id, text, reply_markup=inline_markup)
+                except Exception as error:
+                    if 'The authenticated user is already a participant' in error.args[0]:
+                        ALL_PARTICIPANTS = []
+                        channel = await client.get_entity(link)
+                        current_time_utc =  datetime.now(timezone.utc)
+                        target_time = current_time_utc - timedelta(hours=hours, minutes=0)
+                        ALL_PARTICIPANTS = []
+                        count = 0
+                        points = 1
+                        try:
+                            async for msg in client.iter_messages(channel.id):
+                                count += 1
+                                if count == 20:
+                                    count = 0
+                                    await upload_message.edit_text(text=f'Идёт парсинг'+('.'*points))
+                                    points += 1
+                                    if points == 5:
+                                        points = 0
+                                ALL_PARTICIPANTS.append(msg.sender)
+                        except Exception as error:
+                            pass
+                        target = '*.txt'
+                        file = glob.glob(target)[0]
+                        with open(file, "w", encoding="utf-8") as write_file:
+                            for participant in tqdm(ALL_PARTICIPANTS):
+                                if type(participant) == telethon.types.Channel:
+                                    continue
+                                if participant.username != None and participant.bot == False and participant.fake == False:
+                                    write_file.writelines(f"@{participant.username}\n")
+                        target = '*.txt'
+                        file = glob.glob(target)[0]
+                        os.rename(file, f'{channel.title}.txt')
+                        file = glob.glob(target)[0]
+                        uniqlines = set(open(file,'r', encoding='utf-8').readlines())
+                        open(file,'w', encoding='utf-8').writelines(set(uniqlines))
+                        with open(file, "r+", encoding="utf-8") as write_file:
+                            lines = write_file.readlines()
+                            top_text = f'-------------------------------------\n# Сбор через бота: {dp.bot._me.mention}\n# Группы: {channel.title}\n# Собрано: {datetime.now()}\n# Количество строк: {len(lines)+5}\n-------------------------------------\n'
+                            lines[0] = top_text
+                            write_file.seek(0)
+                            write_file.writelines(lines)
+                        await state.finish()
+                        text = 'Для парсинга следующего чата выберите необходимое действие'
+                        inline_markup = await premium_menu()
+                        await bot.send_document(callback_query.from_user.id, open(file, 'rb'))
+                        await bot.send_message(callback_query.from_user.id, text, reply_markup=inline_markup)
+
 '''Парсинг для обычных пользователей'''
 
 @dp.message_handler(state=ChatOpenLink.waiting_link)
@@ -871,11 +1099,12 @@ async def get_open_report(message: types.Message, state: FSMContext):
                 'u', 'v', 'w', 'x', 'y', 'z'] # Латинский алфавит на каждую букву которого делается запрос
         LIMIT_USER = 200  # Максимальное число записей, передаваемых за один раз, не более 200
         ALL_PARTICIPANTS = []  # Список всех участников канала
-        await message.answer(text='Начинаю парсинг, это может занять от 10 до 15 минут⏱')
+        await bot.send_message(message.chat.id, text='Начинаю парсинг, это может занять от 10 до 15 минут⏱')
+        upload_message = await bot.send_message(message.chat.id, text='Идёт парсинг: 0%')
         for key in queryKey:
-            if queryKey.index(key) == 13:
-                await message.answer(text='50% завершено')
-            print(f'{queryKey.index(key)+1}/{len(queryKey)}')
+            progress = (queryKey.index(key)+1)*100/len(queryKey)
+            progress = float('{:.2f}'.format(progress))
+            await upload_message.edit_text(text=f'Идёт парсинг: {progress}%')
             OFFSET_USER = 0 # номер пользователя, с которого начинается считывание
             while True:
                 participants = await client(GetParticipantsRequest(channel,ChannelParticipantsSearch(key), OFFSET_USER, LIMIT_USER, hash=0))
@@ -1008,6 +1237,10 @@ async def premium_parsing_menu():
         callback_data='parsing_comments'
     ))
     inline_markup.add(types.InlineKeyboardButton(
+        text='Писавшие в чат', 
+        callback_data='parsing_in_chat'
+    ))
+    inline_markup.add(types.InlineKeyboardButton(
         text='Отмена', 
         callback_data='premium_menu'
     ))
@@ -1041,6 +1274,30 @@ async def activity_menu():
     ))
     return inline_markup
 
+async def date_last_message_menu():
+    inline_markup = types.InlineKeyboardMarkup()
+    inline_markup.add(types.InlineKeyboardButton(
+            text='За 1 день', 
+            callback_data='last_24'
+        ))
+    inline_markup.add(types.InlineKeyboardButton(
+            text='За неделю', 
+            callback_data='last_168'
+        ))
+    inline_markup.add(types.InlineKeyboardButton(
+            text='За месяц', 
+            callback_data='last_720'
+        ))
+    inline_markup.add(types.InlineKeyboardButton(
+            text='Всех', 
+            callback_data='last_all'
+        ))
+    inline_markup.add(types.InlineKeyboardButton(
+        text='Отмена', 
+        callback_data='parsing_private_start'
+    ))
+    return inline_markup
+
 '''Сортировка по последней активности'''
 
 async def sort_by_activity(all_particapants, hours):
@@ -1054,7 +1311,7 @@ async def sort_by_activity(all_particapants, hours):
         list_id.append(user.id)
     for i in range(len(list_id)):
         if OFFSET_USER1 > len(list_id):
-            finish_list.extend(await client(GetUsersRequest(list_id[OFFSET_USER:len(list_id)-OFFSET_USER1])))
+            finish_list.extend(await client(GetUsersRequest(list_id[OFFSET_USER:OFFSET_USER1-(OFFSET_USER1-len(list_id))])))
             break
         finish_list.extend(await client(GetUsersRequest(list_id[OFFSET_USER:OFFSET_USER1])))
         OFFSET_USER += 200
